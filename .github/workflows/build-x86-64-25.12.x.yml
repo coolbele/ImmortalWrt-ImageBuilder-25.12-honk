@@ -456,9 +456,18 @@ jobs:
           # repositories 里那条 kmods 源指向官方 hash（0413601b），与我们这个内核
           # 无关，每次构建都会重试 4 秒再吞一条 warning。本地已有全量 kmod，
           # 直接删掉这行，省掉 100+ 条噪音。
+          #
+          # video 那条同理，但原因是上游根本没发这个 feed：实测
+          #   packages/x86_64/base|luci|packages|routing|telephony/packages.adb  全 200
+          #   packages/x86_64/video/packages.adb                                 404
+          # 25.12 的 video feed 没构建出来。apk 每装一个包都会重试它一次，
+          # 578 个包就是几百行 "No such file or directory"，把真正的错挤没了。
+          # 我们装的包里没有 video feed 的东西，删掉不影响任何依赖。
           if [ -f "$IB/repositories" ]; then
-            sed -i '\#/kmods/#d' "$IB/repositories"
-            echo "==> 已移除 repositories 里指向官方 hash 的 kmods 源"
+            sed -i -e '\#/kmods/#d' -e '\#/packages/x86_64/video/#d' "$IB/repositories"
+            echo "==> 已移除 repositories 里的 kmods 源与 video 源（上游 404）"
+            echo "==> 剩余源 $(grep -c . "$IB/repositories") 条："
+            sed 's|^|      |' "$IB/repositories"
           fi
 
           # 内核配置复核：包里的 .config 必须真的带 ftrace 五项。
