@@ -5,8 +5,17 @@ TEMP_DIR="$BASE_DIR/temp-unpack"
 TARGET_DIR="packages"
 
 # 包来源：extra-packages/ 由 x86-64/build25.sh 从 xiealon/apk 的 run/x86 全量同步
-rm -rf "$TEMP_DIR" "$TARGET_DIR"
+#
+# 【2026-11-03】不能 rm -rf 整个 packages/。
+# workflow 的「Prepare local ImageBuilder」已经把自建内核配套的 1,302 个 apk
+# （1,199 kmod）灌在 packages/official/ 里，这一刀会把子目录连根删掉 ——
+# run 41656828346 实测：[ib-pkgs] 看到 official/ 0 个，构建立刻红。
+# 那些 kmod 只能从本地来（官方源的 kmods 目录只认官方内核 hash 0413601b，
+# 本 IB 是 71cc20e3，一条都取不到），所以这里必须保住它们。
+# 只清根层 apk 和临时解包目录，子目录（official/）原样保留。
+rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR" "$TARGET_DIR"
+rm -f "$TARGET_DIR"/*.apk
 
 for run_file in "$BASE_DIR"/*.run; do
     [ -e "$run_file" ] || continue
