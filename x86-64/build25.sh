@@ -1014,14 +1014,38 @@ if [ -n "$_AK_BIN" ] && [ -n "$_AK_IDX" ] && [ -d "$_IB_PKGS" ]; then
     _ib_k=$(ls "$_IB_PKGS"/official/kmod-*.apk 2>/dev/null | wc -l)
     echo "==> [ib-pkgs] 本地 $(pwd)/packages：run 包 $_ib_n 个，official/ $_ib_o 个（其中 kmod $_ib_k 个）"
 
-    # 索引里记的是「相对 repository 根」的路径，所以这里一律用 ./ 开头，
-    # 不能用 basename —— 那样 official/ 前缀会丢，apk 拼出来的路径就是错的。
+    # 【2026-11-03 修】apk 3 不认「索引里的 filename 带子目录前缀」。
+    #
+    # 上一轮（run 41659002690）的实测证据，非常干净：
+    #   根层 ./clashoo-*.apk、./honk-*.apk、./luci-app-*.apk 全部 Installing 成功，零报错；
+    #   official/ 里的包则一律
+    #     ERROR: kmod-pppoe-6.12.103-r1: package mentioned in index not found
+    #   最后 232 errors（206 个 kmod + 9 个 lib + 17 个 target 包），package_install Error 99。
+    #   而那些包就在 official/ 里躺着，索引也确实有 194,475 字节 —— 索引里能查到，
+    #   取文件时却拼不出路径。
+    #
+    # 结论：filename 记成 ./official/x.apk 时 apk 取不到文件，它只认 repository
+    # 根下的平铺文件名。
+    #
+    # 修法：给 official/ 里每个包在根层建一个同名符号链接，索引只收根层 ./*.apk。
+    # filename 就是纯文件名，与 82 个 run 包完全同构 —— 那条路径已被本轮日志证明可用。
+    # 用符号链接不用真拷：省 300MB 磁盘，也不占构建时间。
+    #
+    # 为什么必须放在这一步而不是更早：上面「来源 A」的 packages/*.apk 通配会把根层
+    # apk 全部拷进 /root/apk-cache 打进固件。1,384 个包会凭空多几百 MB。
+    # 这里来源 A 早已跑完，建链接它看不见。
+    _ib_ln_n=0
+    for _f in "$_IB_PKGS"/official/*.apk; do
+        [ -f "$_f" ] || continue
+        _n="${_f##*/}"
+        # 不用 -f 强覆盖：根层若已有同名（run 包），必须保留 run 包那份
+        [ -e "$_IB_PKGS/$_n" ] || { ln -s "official/$_n" "$_IB_PKGS/$_n" && _ib_ln_n=$((_ib_ln_n + 1)); }
+    done
+    echo "==> [ib-pkgs] official/ 已在根层建 $_ib_ln_n 个符号链接"
+
     _ib_list=""
     for _f in "$_IB_PKGS"/*.apk; do
-        [ -f "$_f" ] && _ib_list="$_ib_list ./${_f##*/}"
-    done
-    for _f in "$_IB_PKGS"/official/*.apk; do
-        [ -f "$_f" ] && _ib_list="$_ib_list ./official/${_f##*/}"
+        [ -e "$_f" ] && _ib_list="$_ib_list ./${_f##*/}"
     done
 
     rm -f "$_IB_PKGS/packages.adb"
@@ -1046,6 +1070,13 @@ if [ -n "$_AK_BIN" ] && [ -n "$_AK_IDX" ] && [ -d "$_IB_PKGS" ]; then
     # kmod 一个都不能少：少了就是 make image 装内核模块时缺包，且错在装机阶段才暴露
     if [ "$_ib_k" -lt 1100 ]; then
         echo "::error::official/ 里只有 $_ib_k 个 kmod（预期 1199），内核模块库不完整"
+        exit 1
+    fi
+    # 索引收录数必须对得上：少了就是链接没建成，make image 会在装机阶段才炸
+    _ib_in=$(echo $_ib_list | wc -w)
+    echo "==> [ib-pkgs] 索引收录 $_ib_in 个包（run $_ib_n + official $_ib_o）"
+    if [ "$_ib_in" -lt 1300 ]; then
+        echo "::error::索引只收了 $_ib_in 个包（预期 1380 左右），符号链接或索引生成有问题"
         exit 1
     fi
     echo "==> [ib-pkgs] kmod $_ib_k 个已入索引"
