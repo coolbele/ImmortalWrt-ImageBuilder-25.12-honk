@@ -205,7 +205,11 @@ else
     echo "⚪️ 未选择 clashoo"
 fi
 
-REPOS_CONF="/home/build/immortalwrt/repositories.conf"
+REPOS_CONF="/home/build/immortalwrt/repositories"
+# 【2026-11-03】apk 时代这份文件叫 repositories（不带 .conf），本 IB 里就是它。
+# 原来固定写 repositories.conf，而文件不存在 → 下面 [ -f ] 恒假，
+# EXTRA_APK_REPOS 从上线到现在一次都没生效过。先试无后缀，再退回旧名兼容。
+[ -f "$REPOS_CONF" ] || REPOS_CONF="/home/build/immortalwrt/repositories.conf"
 # ---- 【2026-11-02】修正 GitHub Release 资产名：`~` 被规范化成 `.` ----
 # run #18（head 7be1d3d）实测失败，三个包同时报：
 #   ERROR: luci-app-honk-26.303.60580~1046d3c: package mentioned in index not found
@@ -986,6 +990,67 @@ if [ -n "$_AK_BIN" ] && [ -n "$_AK_IDX" ]; then
         echo "==> [apk-cache] 诊断：$(ls "$_AK_DIR"/*.apk 2>/dev/null | wc -l) 个 apk 未被索引"
         tail -6 /tmp/apk-index.log 2>/dev/null
     fi
+fi
+
+# ---- 【2026-11-03】给 ImageBuilder 自己的 packages/ 建索引 ----
+# 上面那份是 /root/apk-cache（要打进固件的包库），make image 根本不读它。
+# make image 读的是 $(pwd)/packages/packages.adb，而这个索引从来没人建过 ——
+# 上一轮失败日志里那句
+#   WARNING: opening .../ib/packages/packages.adb: No such file or directory
+# 就是它。后果不是少装一个包，是本地仓库整个失效：honk 五件套、clashoo、
+# 全部 run 包一律 (no such package)。
+#
+# official/ 里是自建内核配套的 1,199 个 kmod（workflow 灌进来的）。必须一起进索引：
+# downloads.immortalwrt.org 的 kmods 目录下只有一个官方 hash
+# （6.12.103-1-0413601b1c3f0490e17f340fe09229ea），本 IB 内核是 71cc20e3，
+# 在线一条都取不到，内核模块全指望这份本地库。
+#
+# 放子目录而不是平铺，是为了绕开上面「来源 A」的 packages/*.apk 通配 ——
+# 那条会把匹配到的全拷进 /root/apk-cache 打进固件，1,683 个包会凭空多几百 MB。
+_IB_PKGS="$(pwd)/packages"
+if [ -n "$_AK_BIN" ] && [ -n "$_AK_IDX" ] && [ -d "$_IB_PKGS" ]; then
+    _ib_n=$(ls "$_IB_PKGS"/*.apk 2>/dev/null | wc -l)
+    _ib_o=$(ls "$_IB_PKGS"/official/*.apk 2>/dev/null | wc -l)
+    _ib_k=$(ls "$_IB_PKGS"/official/kmod-*.apk 2>/dev/null | wc -l)
+    echo "==> [ib-pkgs] 本地 $(pwd)/packages：run 包 $_ib_n 个，official/ $_ib_o 个（其中 kmod $_ib_k 个）"
+
+    # 索引里记的是「相对 repository 根」的路径，所以这里一律用 ./ 开头，
+    # 不能用 basename —— 那样 official/ 前缀会丢，apk 拼出来的路径就是错的。
+    _ib_list=""
+    for _f in "$_IB_PKGS"/*.apk; do
+        [ -f "$_f" ] && _ib_list="$_ib_list ./${_f##*/}"
+    done
+    for _f in "$_IB_PKGS"/official/*.apk; do
+        [ -f "$_f" ] && _ib_list="$_ib_list ./official/${_f##*/}"
+    done
+
+    rm -f "$_IB_PKGS/packages.adb"
+    _ib_rc=0
+    ( cd "$_IB_PKGS" && "$_AK_BIN" --allow-untrusted "$_AK_IDX" -o packages.adb $_ib_list ) \
+        >/tmp/ib-index.log 2>&1 || _ib_rc=1
+
+    if [ "$_ib_rc" != "0" ] || [ ! -s "$_IB_PKGS/packages.adb" ]; then
+        echo "::error::IB 包索引建失败，make image 会找不到任何本地包"
+        echo "::error::命令：$_AK_BIN $_AK_IDX -o packages.adb（$_ib_n + $_ib_o 个包）"
+        tail -8 /tmp/ib-index.log 2>/dev/null
+        exit 1
+    fi
+
+    _ib_sz=$(wc -c < "$_IB_PKGS/packages.adb")
+    _ib_magic=$(od -An -tx1 -N3 "$_IB_PKGS/packages.adb" | tr -d ' \n')
+    echo "==> [ib-pkgs] 索引已生成：$_ib_sz 字节，头部=$_ib_magic"
+    if [ "$_ib_sz" -lt 1024 ]; then
+        echo "::error::IB 索引只有 $_ib_sz 字节，是空索引（$((_ib_n + _ib_o)) 个包一个都没进去）"
+        exit 1
+    fi
+    # kmod 一个都不能少：少了就是 make image 装内核模块时缺包，且错在装机阶段才暴露
+    if [ "$_ib_k" -lt 1100 ]; then
+        echo "::error::official/ 里只有 $_ib_k 个 kmod（预期 1199），内核模块库不完整"
+        exit 1
+    fi
+    echo "==> [ib-pkgs] kmod $_ib_k 个已入索引"
+else
+    echo "::warning::[ib-pkgs] 跳过：apk 工具不可用或 packages/ 不存在"
 fi
 
 # --- manifest.txt：pkg-cache-restore.sh --all 的比对基准 ---

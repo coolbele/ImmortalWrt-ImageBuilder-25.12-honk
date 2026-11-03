@@ -391,6 +391,76 @@ jobs:
           tar -I zstd -xf /tmp/ib.tar.zst -C "$IB" --strip-components=1 --no-same-owner
           rm -f /tmp/ib.tar.zst
 
+          # ---------------------------------------------------------------
+          # 【honk 线 · 2026-11-03】把自建内核配套的 apk 全集灌进 IB。
+          #
+          # 为什么必须灌：ImageBuilder 不编 kmod，1,199 个内核模块全靠外部源。
+          # 而 downloads.immortalwrt.org 的 kmods 目录下只有官方那一个 hash：
+          #   releases/25.12.2/targets/x86/64/kmods/6.12.103-1-0413601b1c3f0490e17f340fe09229ea/
+          # 我们这个 IB 的内核是自建 honk 内核，hash 是 71cc20e3 —— 实测那条
+          # packages.adb 返回 404，于是所有 kmod-*、kernel、base-files 全部
+          # 「(no such package)」，make image 直接 Error 99。
+          #
+          # 这份 pkg 包里就是同一次编译产出的全部 1,683 个 apk（1,199 kmod +
+          # 484 其他 + kernel 本尊），内核 hash 与 IB 完全一致，天生配套。
+          # 落在 packages/official/ 子目录（不平铺），因为 build25.sh 的「来源 A」
+          # 会把 packages/*.apk 无差别拷进 /root/apk-cache —— 那是要打进固件的，
+          # 1,683 个包会凭空多出几百 MB。放子目录既不触发那条通配，又能被
+          # build25.sh 生成的索引收录。
+          # ---------------------------------------------------------------
+          PKG_URL="https://github.com/xiealon/immortalwrt-artifacts/releases/download/v25.12.2-pkg-x86-64/packages-x86_64-25.12.2.tar.zst"
+          PKG_SHA="4ad8465468b66852926178b373be53add7c2517fb351c1575b00ede63dd75cfe"
+
+          echo "==> 下载 apk 全集（自建内核配套包）"
+          curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 900 \
+            -o /tmp/pkg.tar.zst "$PKG_URL"
+          echo "==> 校验 sha256"
+          echo "$PKG_SHA  /tmp/pkg.tar.zst" | sha256sum -c -
+
+          # 只解根层 packages/*.apk（扁平那 1,683 个）；packages/x86_64/ 那 397 条
+          # 是 feed 归档，带子目录，ImageBuilder 的 packages/ 是平层，用不上。
+          rm -rf /tmp/pkgx && mkdir -p /tmp/pkgx
+          tar -I zstd -xf /tmp/pkg.tar.zst -C /tmp/pkgx --wildcards 'packages/*.apk' --no-same-owner
+          rm -f /tmp/pkg.tar.zst
+
+          mkdir -p "$IB/packages/official"
+          cp -f /tmp/pkgx/packages/*.apk "$IB/packages/official/"
+          rm -rf /tmp/pkgx
+
+          PKG_N=$(ls "$IB/packages/official"/*.apk 2>/dev/null | wc -l)
+          PKG_K=$(ls "$IB/packages/official"/kmod-*.apk 2>/dev/null | wc -l)
+          echo "==> 已灌入 $PKG_N 个 apk（其中 kmod $PKG_K 个）→ \$IB/packages/official/"
+
+          # 内核包必须与 IB 自带的那份【同一个 hash】。防的是：Release 里的 pkg 包
+          # 被换成另一次编译的产物 —— 那样 kmod 的 kernel(=...) 依赖会对不上，
+          # 构建照样能跑完，但装包阶段才炸，而且报错点离根因很远。
+          IB_KRATIO=$(ls "$IB/packages"/kernel-6.12.*-r1.apk 2>/dev/null | head -n1)
+          PK_KRATIO=$(ls "$IB/packages/official"/kernel-6.12.*-r1.apk 2>/dev/null | head -n1)
+          if [ -z "$IB_KRATIO" ] || [ -z "$PK_KRATIO" ]; then
+            echo "::error::找不到 kernel 包（IB=$IB_KRATIO / pkg=$PK_KRATIO）"
+            exit 1
+          fi
+          if [ "$(basename "$IB_KRATIO")" != "$(basename "$PK_KRATIO")" ]; then
+            echo "::error::内核 hash 不一致，kmod 依赖必然对不上"
+            echo "::error::IB 里：$(basename "$IB_KRATIO")"
+            echo "::error::pkg 里：$(basename "$PK_KRATIO")"
+            exit 1
+          fi
+          echo "==> 内核 hash 一致：$(basename "$IB_KRATIO")"
+
+          if [ "$PKG_K" -lt 1100 ]; then
+            echo "::error::kmod 只有 $PKG_K 个（预期 1199），内核模块库不完整"
+            exit 1
+          fi
+
+          # repositories 里那条 kmods 源指向官方 hash（0413601b），与我们这个内核
+          # 无关，每次构建都会重试 4 秒再吞一条 warning。本地已有全量 kmod，
+          # 直接删掉这行，省掉 100+ 条噪音。
+          if [ -f "$IB/repositories" ]; then
+            sed -i '\#/kmods/#d' "$IB/repositories"
+            echo "==> 已移除 repositories 里指向官方 hash 的 kmods 源"
+          fi
+
           # 内核配置复核：包里的 .config 必须真的带 ftrace 五项。
           # 防的不是下载出错，是「Release 资产被人换成官方 IB」之后整条线静默降级成
           # 一份能开机、但 honk 起不来的固件。
