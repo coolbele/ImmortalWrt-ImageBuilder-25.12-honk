@@ -108,7 +108,12 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    # 【honk 线】runs-on 必须是 24.04，不能退回 22.04。
+    # 本线用的 ImageBuilder 包是在 Ubuntu 24.04 里自建的，staging_dir/host/bin/*
+    # 依赖 glibc 2.39；22.04 的 glibc 是 2.35，一开跑就是
+    #   /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found
+    # 换镜像也救不了：官方 immortalwrt/imagebuilder 镜像的内核没有 DYNAMIC_FTRACE。
+    runs-on: ubuntu-24.04
     # 【CrowdSec 版本】留空 = 跟随 packagecloud 最新：CloudRunFilesBuilder 的 crowdsec-lxc 分支每周按最新重建一次，
     # 本构建直接取它的产物，不再做版本比对（镜像「内容是否同一份代码」仍由指纹严格保证）。
     # 想临时钉死某版：这里改成 "1.8.1" 这类版本号，并把 build-lxc-tarball.yml 的同一行改成一致。
@@ -350,6 +355,78 @@ jobs:
             echo "- 指纹校验：prepare_script / rootfs_skel 与本次 commit 一致"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 【honk 线】不用官方 immortalwrt/imagebuilder 镜像，改用自建的 ImageBuilder 包。
+      #
+      # 为什么必须换：ImageBuilder 不编译内核 —— 内核是包里预编译好的那一个。
+      # 官方镜像（immortalwrt/imagebuilder:x86-64-openwrt-25.12.x）的内核没有
+      # CONFIG_DYNAMIC_FTRACE / _WITH_REGS / _WITH_DIRECT_CALLS，所以在 imm25.config
+      # 里写多少行 CONFIG_KERNEL_DYNAMIC_FTRACE=y 都改不动它 —— 那几行在 ImageBuilder
+      # 阶段不参与内核构建，只是配置回显。honk 是 eBPF 代理，靠 fentry/fexit 挂内核函数，
+      # 没有 DYNAMIC_FTRACE 直接起不来。
+      #
+      # 这个包（immortalwrt-artifacts 的 v25.12.2-ib-x86-64）实测内核 6.12.103：
+      #   CONFIG_DYNAMIC_FTRACE=y / _WITH_REGS=y / _WITH_DIRECT_CALLS=y
+      #   CONFIG_FUNCTION_TRACER=y / CONFIG_DEBUG_INFO_BTF=y
+      # 哈希钉死：包被换掉时这一步直接红，不会悄悄产出一份没有 ftrace 的固件。
+      - name: Prepare local ImageBuilder (honk kernel)
+        run: |
+          set -e
+          IB_URL="https://github.com/xiealon/immortalwrt-artifacts/releases/download/v25.12.2-ib-x86-64/immortalwrt-imagebuilder-25.12.2-x86-64.Linux-x86_64.tar.zst"
+          IB_SHA="18b62f95ad687920a28b3a07eeb79c72cfd25147973074e979a73a718e4767d7"
+          IB="${{ github.workspace }}/ib"
+
+          echo "==> 下载 ImageBuilder（honk 内核）"
+          curl -fsSL --retry 5 --retry-all-errors --connect-timeout 20 --max-time 600 \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -o /tmp/ib.tar.zst "$IB_URL"
+          echo "==> 校验 sha256"
+          echo "$IB_SHA  /tmp/ib.tar.zst" | sha256sum -c -
+
+          command -v zstd >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y zstd; }
+          mkdir -p "$IB"
+          echo "==> 解压"
+          tar -I zstd -xf /tmp/ib.tar.zst -C "$IB" --strip-components=1 --no-same-owner
+          rm -f /tmp/ib.tar.zst
+
+          # 内核配置复核：包里的 .config 必须真的带 ftrace 五项。
+          # 防的不是下载出错，是「Release 资产被人换成官方 IB」之后整条线静默降级成
+          # 一份能开机、但 honk 起不来的固件。
+          KCFG=$(find "$IB/build_dir" -path '*linux-x86_64/linux-*/.config' 2>/dev/null | head -n1)
+          if [ -n "$KCFG" ]; then
+            for k in CONFIG_DYNAMIC_FTRACE CONFIG_DYNAMIC_FTRACE_WITH_REGS \
+                     CONFIG_DYNAMIC_FTRACE_WITH_DIRECT_CALLS CONFIG_FUNCTION_TRACER \
+                     CONFIG_DEBUG_INFO_BTF; do
+              grep -qx "$k=y" "$KCFG" || { echo "::error::IB 内核缺 $k（$KCFG）—— honk 会起不来"; exit 1; }
+            done
+            echo "==> 内核配置复核通过：ftrace/BTF 五项全开"
+          else
+            echo "::warning::没找到 IB 的内核 .config，跳过复核"
+          fi
+
+          # build25.sh 里写死了 /home/build/immortalwrt（12 处以上：packages/、
+          # repositories.conf、files/etc/config、make image 的 FILES=）。不再进容器，
+          # 就用软链把这个路径指到解压目录，脚本一个字都不用改。
+          sudo mkdir -p /home/build
+          sudo ln -sfn "$IB" /home/build/immortalwrt
+
+          # 产物目录：原来靠 -v 挂到容器的 bin/，现在让 workspace/bin 指向 IB/bin，
+          # 后面「产物文件名加档位后缀」「上传 Release」照旧读 $GITHUB_WORKSPACE/bin。
+          mkdir -p "$IB/bin"
+          rm -rf "${{ github.workspace }}/bin"
+          ln -sfn "$IB/bin" "${{ github.workspace }}/bin"
+
+          # 仓库侧的输入挂进去（等价于原来的 7 个 -v）。
+          cp -f "${{ github.workspace }}/x86-64/imm25.config" "$IB/.config"
+          cp -f "${{ github.workspace }}/x86-64/build25.sh" "$IB/build.sh"
+          chmod +x "$IB/build.sh"
+          for d in files shell custom rootfs-skel tests; do
+            [ -d "${{ github.workspace }}/$d" ] || { echo "::error::缺目录 $d"; exit 1; }
+            rm -rf "$IB/$d"
+            ln -sfn "${{ github.workspace }}/$d" "$IB/$d"
+          done
+
+          echo "==> IB 就绪：$(du -sh "$IB" | cut -f1)"
+
       - name: Build ImmortalWrt x86-64 EFI 25.12.x
         run: |
           profile="${{ github.event.inputs['Profile'] }}"
@@ -372,20 +449,17 @@ jobs:
               ;;
           esac
           echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
-          luci_version="${{ github.event.inputs['Luci Version'] }}"
           echo "Building for rootfs_size: $profile"
-          docker run --rm -i \
-            --user root \
-            -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
-            -v "${{ github.workspace }}/files:/home/build/immortalwrt/files" \
-            -v "${{ github.workspace }}/custom:/home/build/immortalwrt/custom" \
-            -v "${{ github.workspace }}/x86-64/imm25.config:/home/build/immortalwrt/.config" \
-            -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
-            -v "${{ github.workspace }}/rootfs-skel:/home/build/immortalwrt/rootfs-skel" \
-            -v "${{ github.workspace }}/tests:/home/build/immortalwrt/tests" \
-            -v "${{ github.workspace }}/x86-64/build25.sh:/home/build/immortalwrt/build.sh" \
-            -e PROFILE=$ROOTFS_SIZE \
-          immortalwrt/imagebuilder:x86-64-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
+          # 【honk 线】不再 docker run 官方镜像。IB 已由上一步解压到 $GITHUB_WORKSPACE/ib，
+          # .config / build.sh / files / shell / custom / rootfs-skel / tests 都已接好，
+          # /home/build/immortalwrt 是指向它的软链 —— 直接在本机跑 build.sh 即可。
+          # 注意 「Luci Version」下拉框在本线已不决定内核：内核来自 IB 包，换它只会换
+          # 工具链镜像，换不到 ftrace。留着输入只为将来切回官方镜像时不用改页面。
+          IB="${{ github.workspace }}/ib"
+          [ -x "$IB/build.sh" ] || { echo "::error::IB 未就绪：$IB/build.sh 不存在"; exit 1; }
+          cd "$IB"
+          # 不用 sudo：产物归 runner 用户，后面改名/上传都不需要再 chown。
+          PROFILE=$ROOTFS_SIZE bash "$IB/build.sh"
 
 
       - name: Create Info
