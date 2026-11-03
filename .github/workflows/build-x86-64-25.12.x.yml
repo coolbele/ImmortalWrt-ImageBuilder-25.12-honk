@@ -3,14 +3,17 @@ name: Build 25.12.x x86-64
 on:
   workflow_dispatch:
     inputs:
+      # 【honk 线】只剩 25.12.2 一档。这一项在本线已经不参与编译 ——
+      # 内核和工具链都来自自建 IB 包（v25.12.2-ib-x86-64），跟这个下拉框无关。
+      # 不删是因为 workflow_dispatch 少一项容易让人以为「还能切回 25.12.1」，
+      # 留一个不可切换的 25.12.2 反而是最清楚的说明。
       Luci Version:
-        description: "选择luci版本"
+        description: "版本（本线固定 25.12.2，内核来自自建 IB 包，不可切换）"
         required: false
-        default: "25.12.1"
+        default: "25.12.2"
         type: choice
         options:
-          - 25.12.0
-          - 25.12.1
+          - 25.12.2
       Router IP:
         description: "请设置路由器的管理地址(仅对多网口路由器有效) 格式:192.168.x.1 或 10.x.x.1"
         required: true
