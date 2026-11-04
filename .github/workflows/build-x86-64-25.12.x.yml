@@ -394,18 +394,18 @@ jobs:
           # ---------------------------------------------------------------
           # 【honk 线 · 2026-11-03】把自建内核配套的 apk 全集灌进 IB。
           #
-          # 为什么必须灌：ImageBuilder 不编 kmod，1,199 个内核模块全靠外部源。
+          # 为什么必须灌：ImageBuilder 不编 kmod，1,204 个内核模块全靠外部源。
           # 而 downloads.immortalwrt.org 的 kmods 目录下只有官方那一个 hash：
           #   releases/25.12.2/targets/x86/64/kmods/6.12.103-1-0413601b1c3f0490e17f340fe09229ea/
           # 我们这个 IB 的内核是自建 honk 内核，hash 是 26ed6bc1 —— 实测那条
           # packages.adb 返回 404，于是所有 kmod-*、kernel、base-files 全部
           # 「(no such package)」，make image 直接 Error 99。
           #
-          # 这份 pkg 包里就是同一次编译产出的全部 1,683 个 apk（1,199 kmod +
+          # 这份 pkg 包里就是同一次编译产出的全部 1,688 个 apk（1,204 kmod +
           # 484 其他 + kernel 本尊），内核 hash 与 IB 完全一致，天生配套。
           # 落在 packages/official/ 子目录（不平铺），因为 build25.sh 的「来源 A」
           # 会把 packages/*.apk 无差别拷进 /root/apk-cache —— 那是要打进固件的，
-          # 1,683 个包会凭空多出几百 MB。放子目录既不触发那条通配，又能被
+          # 1,688 个包会凭空多出几百 MB。放子目录既不触发那条通配，又能被
           # build25.sh 生成的索引收录。
           # ---------------------------------------------------------------
           PKG_URL="https://github.com/xiealon/immortalwrt-artifacts/releases/download/v25.12.2-pkg-x86-64-r2/packages-x86_64-25.12.2.tar.zst"
@@ -417,7 +417,7 @@ jobs:
           echo "==> 校验 sha256"
           echo "$PKG_SHA  /tmp/pkg.tar.zst" | sha256sum -c -
 
-          # 只解根层 packages/*.apk（扁平那 1,683 个）；packages/x86_64/ 那 397 条
+          # 只解根层 packages/*.apk（扁平那 1,688 个）；packages/x86_64/ 那 397 条
           # 是 feed 归档，带子目录，ImageBuilder 的 packages/ 是平层，用不上。
           rm -rf /tmp/pkgx && mkdir -p /tmp/pkgx
           tar -I zstd -xf /tmp/pkg.tar.zst -C /tmp/pkgx --wildcards 'packages/*.apk' --no-same-owner
@@ -449,7 +449,7 @@ jobs:
           echo "==> 内核 hash 一致：$(basename "$IB_KRATIO")"
 
           if [ "$PKG_K" -lt 1100 ]; then
-            echo "::error::kmod 只有 $PKG_K 个（预期 1199），内核模块库不完整"
+            echo "::error::kmod 只有 $PKG_K 个（预期 1204），内核模块库不完整"
             exit 1
           fi
 
