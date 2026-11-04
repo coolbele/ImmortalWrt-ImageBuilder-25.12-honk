@@ -142,5 +142,6 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-br-netfilter"
 # acpi_call: manual EC fan-step control for Panasonic CFSV7-3 (added 2026-11-05).
 # apk already ships in packages tar (kmod-acpi-call-6.12.103.1.0-r1.apk); list it here only.
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-acpi-call"
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-hwmon-pwmfan kmod-gpio-pwm"
 
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES glib2 crconf davici swanmon kmod-crypto-chacha20poly1305"
