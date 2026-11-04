@@ -139,5 +139,8 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-i18n-crowdsec-firewall-bouncer-zh-cn"
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES xz tar ip-full"
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-veth kmod-ikconfig"
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-br-netfilter"
+# acpi_call锛氫慨鏀瑰櫒璇锋眰鐨�48锛夈��2026-11-05銆戣皟 Panasonic CFSV7-3 椋庢墖 EC 鎵嬪姩璁惧畾
+# 鍖呭湪 packages tar 閲岋紙kmod-acpi-call-6.12.103.1.0-r1.apk锛夛紝杩欓噷鍙�鏄�鎶婂畠鍔犺繘 PACKAGES
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES kmod-acpi-call"
 
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES glib2 crconf davici swanmon kmod-crypto-chacha20poly1305"
