@@ -367,7 +367,7 @@ jobs:
       # 阶段不参与内核构建，只是配置回显。honk 是 eBPF 代理，靠 fentry/fexit 挂内核函数，
       # 没有 DYNAMIC_FTRACE 直接起不来。
       #
-      # 这个包（immortalwrt-artifacts 的 v25.12.2-ib-x86-64）实测内核 6.12.103：
+      # 这个包（immortalwrt-artifacts 的 v25.12.2-ib-x86-64-r2）实测内核 6.12.103：
       #   CONFIG_DYNAMIC_FTRACE=y / _WITH_REGS=y / _WITH_DIRECT_CALLS=y
       #   CONFIG_FUNCTION_TRACER=y / CONFIG_DEBUG_INFO_BTF=y
       # 哈希钉死：包被换掉时这一步直接红，不会悄悄产出一份没有 ftrace 的固件。
