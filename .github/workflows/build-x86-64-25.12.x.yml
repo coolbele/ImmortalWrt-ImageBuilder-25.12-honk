@@ -397,7 +397,7 @@ jobs:
           # 为什么必须灌：ImageBuilder 不编 kmod，1,199 个内核模块全靠外部源。
           # 而 downloads.immortalwrt.org 的 kmods 目录下只有官方那一个 hash：
           #   releases/25.12.2/targets/x86/64/kmods/6.12.103-1-0413601b1c3f0490e17f340fe09229ea/
-          # 我们这个 IB 的内核是自建 honk 内核，hash 是 71cc20e3 —— 实测那条
+          # 我们这个 IB 的内核是自建 honk 内核，hash 是 26ed6bc1 —— 实测那条
           # packages.adb 返回 404，于是所有 kmod-*、kernel、base-files 全部
           # 「(no such package)」，make image 直接 Error 99。
           #
