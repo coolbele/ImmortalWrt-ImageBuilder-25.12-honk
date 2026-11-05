@@ -2,28 +2,13 @@
 
 给 **honk** 用的固件构建线：自建内核（带 ftrace + BTF）+ 自建 apk 全集，只有这一条线能把 honk 跑起来。
 
-固件本体仍是 ImmortalWrt 25.12.2 x86-64，和原仓库 `ImmortalWrt-ImageBuilder-25.12` 一样的 CrowdSec LXC、一样的 rootfs-skel、一样的网络校验脚本。差别只在**内核和 apk 来源**。
-
----
-
-## honk 是什么
-
-honk 是 dae 系的一个 OpenWrt 集成，基于 eBPF 的透明代理。上游手册在 [daeuniverse.org](https://daeuniverse.org/)，当前上游版本 v2.1.1，本仓库装的 honk 是 **0.1.0_beta4-r3**。
-
-它和普通代理软件的根本区别在这里：
-
-- 不走 iptables/nftables 转发，而是**把程序挂到内核函数上**（fentry/fexit），在 syscall 层决定流量去向
-- 因此内核必须开 **ftrace 五项 + BTF**，缺一个 honk 直接起不来
-- 内核版本要求 **≥ 5.17**，本仓库是 **6.12.103**
-
-官方 ImageBuilder 的内核不带这套配置，也没法在打好包的 IB 里补 —— 内核选项属于编译期，改一次 hash 就变一次。所以只能自建内核，再拿自建内核产出的 IB 包来打固件。这就是本仓库存在的全部理由。
-
----
+固件本体仍是 ImmortalWrt 25.12.2 x86-64，和 `ImmortalWrt-ImageBuilder-25.12` 一样的 CrowdSec LXC、一样的 rootfs-skel、一样的网络校验脚本。差别只在**内核和 apk 来源**。
 
 ## 三条线的差异
 
 | | 25.12 | 24.10 | 25.12-honk |
 |---|---|---|---|
+| 用途 | **主线** | 老版本线，维护用 | **跑 honk** |
 | workflow | 27,449 B / 485 行 | 27,853 B / 494 行 | **37,419 B / 641 行** |
 | `runs-on` | ubuntu-22.04 | ubuntu-22.04 | **ubuntu-24.04** |
 | ImageBuilder | 官方 docker，tag 跟下拉（25.12.0 / 25.12.1） | 官方 docker，tag 跟下拉（24.10.0 ~ 24.10.6） | **自建 IB 包**，`v25.12.2-ib-x86-64-r2` |
@@ -38,6 +23,22 @@ honk 是 dae 系的一个 OpenWrt 集成，基于 eBPF 的透明代理。上游�
 | `sha256/` 目录 | 无 | 无 | **有** |
 | CrowdSec LXC / rootfs-skel / 网络校验 | 有 | 有 | 有 |
 | 版本日志 | README 2,773 行 | 不重复，见 25.12 | 不重复，见 25.12 |
+
+**完整的 CrowdSec LXC、网络与防火墙校验、`rootfs-skel` 契约、版本日志 → [xiealon/ImmortalWrt-ImageBuilder-25.12](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/README.md)**
+
+---
+
+## honk 是什么
+
+honk 是 dae 系的一个 OpenWrt 集成，基于 eBPF 的透明代理。上游手册在 [daeuniverse.org](https://daeuniverse.org/)，当前上游版本 v2.1.1，本仓库装的 honk 是 **0.1.0_beta4-r3**。
+
+它和普通代理软件的根本区别在这里：
+
+- 不走 iptables/nftables 转发，而是**把程序挂到内核函数上**（fentry/fexit），在 syscall 层决定流量去向
+- 因此内核必须开 **ftrace 五项 + BTF**，缺一个 honk 直接起不来
+- 内核版本要求 **≥ 5.17**，本仓库是 **6.12.103**
+
+官方 ImageBuilder 的内核不带这套配置，也没法在打好包的 IB 里补 —— 内核选项属于编译期，改一次 hash 就变一次。所以只能自建内核，再拿自建内核产出的 IB 包来打固件。这就是本仓库存在的全部理由。
 
 ---
 
@@ -140,7 +141,7 @@ honk 那 5 个 apk 不在 pkg 包里，构建时由 `build25.sh` 从 [CloudRunFi
 2. 填 `Router IP`（多网口才生效），其余留空即用默认
 3. `Luci Version` 下拉框只有 25.12.2 一项，**这是故意的**：内核来自自建 IB 包，切换版本没有意义，留一个不可选项比删掉更不容易误解
 
-产物在 run 的 artifact 与 Release 里，文件名带档位后缀。
+产物在 run 的 artifact 与 Release 里，文件名带档位后缀。第三方插件清单见 [PACKAGES.md](PACKAGES.md)，支持的机型见 [SUPPORT.md](SUPPORT.md)。
 
 ---
 
@@ -149,18 +150,6 @@ honk 那 5 个 apk 不在 pkg 包里，构建时由 `build25.sh` 从 [CloudRunFi
 1. **内核 hash 是硬约束**。IB 包内是 `kernel-6.12.103~26ed6bc1347f7e9e86ff98fe27513539-r1.apk`，改任何内核 Kconfig 选项 hash 立刻变，IB 包和 1,688 个 apk 同时作废。想加内核模块请走 `imm25.config`（包级），不要动内核 `.config`。
 2. **改 `imm25.config` 不影响 hash**。它只是告诉 `make image` 装哪些包。
 3. **honk 组 apk 版本随上游 Release 走**，不在本仓库固定。版本漂了要重新看 `build25.sh` 里那段下载逻辑。
-
----
-
-## 不在本 README 里的内容
-
-CrowdSec LXC 的整套运行期逻辑、网络与防火墙的逐条校验、`rootfs-skel` 契约、以及 v.103 起的完整版本日志，都写在原仓库：
-
-**[xiealon/ImmortalWrt-ImageBuilder-25.12 → README.md](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/README.md)**
-
-本仓库与那部分**逐字节相同**，没必要抄第二遍。
-
-第三方插件清单见 [PACKAGES.md](PACKAGES.md)，支持的机型见 [SUPPORT.md](SUPPORT.md)。
 
 ---
 
