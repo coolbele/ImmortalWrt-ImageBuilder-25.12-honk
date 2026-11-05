@@ -141,7 +141,7 @@ honk 那 5 个 apk 不在 pkg 包里，构建时由 `build25.sh` 从 [CloudRunFi
 2. 填 `Router IP`（多网口才生效），其余留空即用默认
 3. `Luci Version` 下拉框只有 25.12.2 一项，**这是故意的**：内核来自自建 IB 包，切换版本没有意义，留一个不可选项比删掉更不容易误解
 
-产物在 run 的 artifact 与 Release 里，文件名带档位后缀。第三方插件清单见 [PACKAGES.md](PACKAGES.md)，支持的机型见 [SUPPORT.md](SUPPORT.md)。
+产物在 run 的 artifact 与 Release 里，文件名带档位后缀。
 
 ---
 
