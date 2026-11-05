@@ -22,7 +22,7 @@
 | honk 组 apk | 无 | 无 | **5 个，构建时从 `honk-apk` Release 取** |
 | `sha256/` 目录 | 无 | 无 | **有** |
 | CrowdSec LXC / rootfs-skel / 网络校验 | 有 | 有 | 有 |
-| 文档 | README 95 行 + CROWDSEC 533 行 + CHANGELOG 2,259 行 | 只有 README | 只有 README |
+| 文档 | README + CROWDSEC（533 行）+ CHANGELOG（2,259 行） | 同左 | 同左 |
 
 **完整的 CrowdSec LXC 运行期逻辑、网络与防火墙校验、`rootfs-skel` 契约 → [CROWDSEC.md](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/CROWDSEC.md)；v.103 起的改动记录 → [CHANGELOG.md](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/CHANGELOG.md)**
 
@@ -160,4 +160,4 @@ honk 那 5 个 apk 不在 pkg 包里，构建时由 `build25.sh` 从 [CloudRunFi
 
 GPL-2.0 与 GPL-3.0 不兼容，两者边界必须分清：**脚本是 3.0，固件是 2.0**。
 
-上游 ImageBuilder 工作流出自 [wukongdaily](https://github.com/wukongdaily/AutoBuildImmortalWrt)，出处与许可信息见 [wukongdaily.md](wukongdaily.md)。
+上游 ImageBuilder 工作流出自 [wukongdaily/AutoBuildImmortalWrt](https://github.com/wukongdaily/AutoBuildImmortalWrt)，其说明文字版权归原作者所有，本仓库不再复制原文。
