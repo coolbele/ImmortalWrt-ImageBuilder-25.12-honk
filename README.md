@@ -24,7 +24,7 @@
 | CrowdSec LXC / rootfs-skel / 网络校验 | 有 | 有 | 有 |
 | 版本日志 | README 2,773 行 | 不重复，见 25.12 | 不重复，见 25.12 |
 
-**完整的 CrowdSec LXC、网络与防火墙校验、`rootfs-skel` 契约、版本日志 → [xiealon/ImmortalWrt-ImageBuilder-25.12](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/README.md)**
+**完整的 CrowdSec LXC、网络与防火墙校验、`rootfs-skel` 契约 → [25.12 README](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/README.md)；v.103 起的改动记录 → [CHANGELOG](https://github.com/xiealon/ImmortalWrt-ImageBuilder-25.12/blob/master/CHANGELOG.md)**
 
 ---
 
